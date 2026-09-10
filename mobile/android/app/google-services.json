@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "934286397615",
+    "project_id": "imagemobiles-45aeb",
+    "storage_bucket": "imagemobiles-45aeb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934286397615:android:66fbfda7168a3274c0445a",
+        "android_client_info": {
+          "package_name": "in.imagemobiles.technician_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2BI5ho-bb1rTWBbsolIgh0iEogrxGJaY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

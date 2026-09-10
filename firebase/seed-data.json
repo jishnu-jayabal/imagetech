@@ -1,0 +1,133 @@
+{
+  "branches": [
+    {
+      "id": "branch_mg_road",
+      "name": "Image Mobiles - M.G. Road Branch",
+      "code": "IMG-MGR",
+      "address": "Opposite Shenoys Theater, M.G. Road, Ernakulam, Kerala 682035",
+      "phone": "+91 484 238 9012",
+      "location": {
+        "latitude": 9.9723,
+        "longitude": 76.2783
+      },
+      "managerId": "usr_mgr_suresh",
+      "activeTechniciansCount": 6,
+      "createdAt": "2026-01-15T09:00:00Z"
+    },
+    {
+      "id": "branch_edappally",
+      "name": "Image Mobiles - Edappally Central Hub & Lab",
+      "code": "IMG-EDP",
+      "address": "Near Edappally Toll, Metro Pillar 382, Kochi, Kerala 682024",
+      "phone": "+91 484 280 4455",
+      "location": {
+        "latitude": 10.0236,
+        "longitude": 76.3116
+      },
+      "managerId": "usr_mgr_anitha",
+      "activeTechniciansCount": 8,
+      "createdAt": "2026-02-01T09:00:00Z"
+    }
+  ],
+  "technicians": [
+    {
+      "id": "tech_rahul",
+      "branchId": "branch_mg_road",
+      "name": "Rahul Kumar",
+      "phone": "+91 98471 23456",
+      "email": "rahul.k@imagemobiles.in",
+      "photoUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80",
+      "vehicleNumber": "KL-07-CD-4912",
+      "vehicleType": "Honda Activa 6G",
+      "skills": ["OnePlus Certified", "Apple Screen Specialist", "SMD Micro-soldering"],
+      "rating": 4.92,
+      "completedJobsCount": 348,
+      "status": "on_duty",
+      "batteryLevel": 89,
+      "lastLocation": {
+        "latitude": 9.9723,
+        "longitude": 76.2783,
+        "timestamp": "2026-09-10T09:30:00Z"
+      }
+    },
+    {
+      "id": "tech_anand",
+      "branchId": "branch_mg_road",
+      "name": "Anand Mohan",
+      "phone": "+91 97451 88721",
+      "email": "anand.m@imagemobiles.in",
+      "photoUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80",
+      "vehicleNumber": "KL-07-BW-1102",
+      "vehicleType": "TVS Jupiter",
+      "skills": ["Samsung Flagship Specialist", "Foldable Display Tech"],
+      "rating": 4.88,
+      "completedJobsCount": 215,
+      "status": "available",
+      "batteryLevel": 94,
+      "lastLocation": {
+        "latitude": 9.9830,
+        "longitude": 76.2865,
+        "timestamp": "2026-09-10T09:25:00Z"
+      }
+    }
+  ],
+  "jobs": [
+    {
+      "id": "job_7204",
+      "jobNumber": "IMG-7204",
+      "trackingToken": "IMG-7204-KL",
+      "branchId": "branch_mg_road",
+      "technicianId": "tech_rahul",
+      "customer": {
+        "name": "Dr. Priya Nair",
+        "phone": "+91 94470 98123",
+        "address": "Flat 4B, Skyline Oasis, Palarivattom, Kochi, Kerala 682025",
+        "location": {
+          "latitude": 10.0055,
+          "longitude": 76.3075
+        }
+      },
+      "device": {
+        "brand": "OnePlus",
+        "model": "OnePlus 11 5G",
+        "color": "Emerald Green",
+        "imeiOrSerial": "864291058291038"
+      },
+      "issueDescription": "Green vertical lines on AMOLED screen, occasional touch stutter, and fast battery drainage",
+      "serviceType": "Doorstep Inspection & Screen Repair",
+      "status": "assigned",
+      "pricing": {
+        "baseEstimate": 1200,
+        "estimateApproved": true,
+        "approvedBy": "usr_mgr_suresh",
+        "additionalCharges": [],
+        "subtotal": 1200,
+        "gstRate": 0.18,
+        "total": 1416
+      },
+      "shopRepairWorkflow": {
+        "isShopRepairRequired": false,
+        "leg1PickupStatus": "not_started",
+        "labDiagnosticNotes": null,
+        "leg2DeliveryStatus": "not_started"
+      },
+      "completionProof": {
+        "photoUrls": [],
+        "customerSignature": null,
+        "technicianNotes": null
+      },
+      "timeline": [
+        {
+          "status": "created",
+          "timestamp": "2026-09-10T08:15:00Z",
+          "notes": "Job created via customer phone support"
+        },
+        {
+          "status": "assigned",
+          "timestamp": "2026-09-10T08:30:00Z",
+          "notes": "Assigned to Rahul Kumar by Branch Manager Suresh"
+        }
+      ]
+    }
+  ]
+}
