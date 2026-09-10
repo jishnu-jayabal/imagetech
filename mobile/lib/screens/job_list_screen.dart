@@ -4,6 +4,8 @@ import '../models/job_model.dart';
 import '../services/job_service.dart';
 import '../widgets/status_badge.dart';
 import 'job_detail_screen.dart';
+import 'profile_screen.dart';
+import 'notifications_screen.dart';
 
 class JobListScreen extends StatefulWidget {
   const JobListScreen({super.key});
@@ -61,7 +63,7 @@ class _JobListScreenState extends State<JobListScreen> {
                 ],
               ),
               const Text(
-                'Creates a job with status "Pending Estimate" auto-assigned to you (PDF Sec 3.3).',
+                'Creates a field service job auto-assigned to you, queued for diagnostic estimate approval.',
                 style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
               ),
               const SizedBox(height: 16),
@@ -177,47 +179,46 @@ class _JobListScreenState extends State<JobListScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF131B2E),
         elevation: 0,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: const Color(0xFF2563EB),
-              backgroundImage: (tech?.photoUrl.isNotEmpty ?? false) ? NetworkImage(tech!.photoUrl) : null,
-              child: (tech?.photoUrl.isEmpty ?? true)
-                  ? Text(tech?.name.isNotEmpty == true ? tech!.name[0] : 'T', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    tech?.name ?? 'Technician',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: jobService.isGpsBroadcasting ? const Color(0xFF38BDF8) : const Color(0xFF10B981),
-                          shape: BoxShape.circle,
-                        ),
+        title: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  tech?.name ?? 'Technician Portal',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: jobService.isGpsBroadcasting ? const Color(0xFF38BDF8) : const Color(0xFF10B981),
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(width: 5),
-                      Text(
-                        jobService.isGpsBroadcasting ? 'GPS Broadcasting' : (tech?.vehicleNumber ?? 'On Duty'),
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      jobService.isGpsBroadcasting ? 'GPS Broadcasting' : (tech?.vehicleNumber ?? 'On Duty'),
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
         ),
         actions: [
           IconButton(
@@ -225,10 +226,32 @@ class _JobListScreenState extends State<JobListScreen> {
             tooltip: 'Sync Firestore Jobs',
             onPressed: () => jobService.syncJobsFromFirestore(),
           ),
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: Color(0xFFF87171)),
-            tooltip: 'Sign Out',
-            onPressed: () => jobService.signOut(),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                tooltip: 'Notifications',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                  );
+                },
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEF4444),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -238,7 +261,7 @@ class _JobListScreenState extends State<JobListScreen> {
           if (jobService.isGpsBroadcasting)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: const Color(0xFF1E3A8A).withOpacity(0.5),
+              color: const Color(0xFF1E3A8A).withValues(alpha: 0.5),
               child: const Row(
                 children: [
                   SizedBox(

@@ -62,6 +62,7 @@ import { Technician } from '../../models/admin.models';
                 <div class="rating-badge">★ {{ tech.rating || 5.0 }}</div>
               </div>
               <p class="phone">📞 {{ tech.phone }}</p>
+              <p class="phone" *ngIf="tech.email">✉️ {{ tech.email }}</p>
               <div class="vehicle-chip">
                 <span>🛵</span>
                 <span>{{ tech.vehicleType }} ({{ tech.vehicleNumber }})</span>
@@ -126,6 +127,10 @@ import { Technician } from '../../models/admin.models';
               <input type="text" class="form-input" [(ngModel)]="currentTech.phone" placeholder="e.g. +91 98470 12345" />
             </div>
             <div>
+              <label class="form-label">Email Address (Optional)</label>
+              <input type="email" class="form-input" [(ngModel)]="currentTech.email" placeholder="e.g. anand.kumar@imagemobiles.com" />
+            </div>
+            <div>
               <label class="form-label">Assigned Branch Hub</label>
               <select class="form-input" [(ngModel)]="currentTech.branchId">
                 <option value="">Central Headquarters</option>
@@ -152,9 +157,10 @@ import { Technician } from '../../models/admin.models';
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-outline" (click)="closeModal()">Cancel</button>
-            <button class="btn btn-primary" (click)="saveTechnician()">
-              {{ isEditing ? 'Save Changes' : 'Add Technician & Sync' }}
+            <button class="btn btn-outline" (click)="closeModal()" [disabled]="isSaving">Cancel</button>
+            <button class="btn btn-primary" (click)="saveTechnician()" [disabled]="isSaving">
+              <span *ngIf="isSaving" class="spinner-border spinner-border-sm" style="display: inline-block; width: 13px; height: 13px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle;"></span>
+              {{ isSaving ? 'Saving...' : (isEditing ? 'Save Changes' : 'Add Technician & Sync') }}
             </button>
           </div>
         </div>
@@ -258,8 +264,9 @@ export class TechniciansPageComponent implements OnInit {
   currentTech: any = {
     name: '',
     phone: '',
-    vehicleType: 'Honda Activa 6G',
-    vehicleNumber: 'KL-07-XX-1234',
+    email: '',
+    vehicleType: '',
+    vehicleNumber: '',
     branchId: '',
     status: 'available'
   };
@@ -295,8 +302,9 @@ export class TechniciansPageComponent implements OnInit {
     this.currentTech = {
       name: '',
       phone: '',
-      vehicleType: 'Honda Activa 6G',
-      vehicleNumber: 'KL-07-XX-1234',
+      email: '',
+      vehicleType: '',
+      vehicleNumber: '',
       branchId: firstBranchId,
       status: 'available'
     };
@@ -309,6 +317,7 @@ export class TechniciansPageComponent implements OnInit {
     this.currentTech = {
       name: tech.name,
       phone: tech.phone,
+      email: tech.email || '',
       vehicleType: tech.vehicleType,
       vehicleNumber: tech.vehicleNumber,
       branchId: tech.branchId,
@@ -317,23 +326,33 @@ export class TechniciansPageComponent implements OnInit {
     this.showModal = true;
   }
 
+  isSaving = false;
+
   closeModal(): void {
+    if (this.isSaving) return;
     this.showModal = false;
   }
 
   async saveTechnician(): Promise<void> {
+    if (this.isSaving) return;
     if (!this.currentTech.name || !this.currentTech.phone) {
       alert('Technician full name and mobile phone are required.');
       return;
     }
 
-    if (this.isEditing && this.currentTechId) {
-      await this.adminService.updateTechnician(this.currentTechId, this.currentTech);
-    } else {
-      await this.adminService.createTechnician(this.currentTech);
+    try {
+      this.isSaving = true;
+      if (this.isEditing && this.currentTechId) {
+        await this.adminService.updateTechnician(this.currentTechId, this.currentTech);
+      } else {
+        await this.adminService.createTechnician(this.currentTech);
+      }
+      this.showModal = false;
+    } catch (err: any) {
+      alert('Failed to save technician: ' + (err.message || err));
+    } finally {
+      this.isSaving = false;
     }
-
-    this.showModal = false;
   }
 
   async updateStatus(tech: Technician, status: 'available' | 'on_duty' | 'offline'): Promise<void> {

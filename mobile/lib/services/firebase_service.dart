@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,32 +9,163 @@ class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  ConfirmationResult? _webConfirmationResult;
+
   User? get currentUser => _auth.currentUser;
   String? get userId => _auth.currentUser?.uid;
+  String? get currentPhoneNumber => _auth.currentUser?.phoneNumber;
   bool get isAuthenticated => _auth.currentUser != null;
 
-  // --- AUTHENTICATION ---
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  Future<Map<String, dynamic>> signInWithEmailPassword(
-      String email, String password) async {
+  // --- PHONE AUTHENTICATION ---
+
+  /// Sends OTP to the technician's mobile number.
+  /// Works across Android, iOS, and Web.
+  Future<Map<String, dynamic>> sendOtp({
+    required String phoneNumber,
+    int? forceResendingToken,
+    void Function(String verificationId, int? resendToken)? onCodeSent,
+    void Function(PhoneAuthCredential credential)? onAutoVerified,
+    void Function(String error)? onError,
+  }) async {
+    final cleanPhone = phoneNumber.trim();
+
+    if (kIsWeb) {
+      try {
+        _webConfirmationResult = await _auth.signInWithPhoneNumber(cleanPhone);
+        return {
+          'success': true,
+          'verificationId': 'web_${_webConfirmationResult.hashCode}',
+          'isWeb': true,
+        };
+      } catch (e) {
+        debugPrint('[FirebaseService] Web phone auth error: $e');
+        return {
+          'success': false,
+          'error': e.toString(),
+        };
+      }
+    }
+
+    final completer = Completer<Map<String, dynamic>>();
+
     try {
-      final userCredential = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
+      await _auth.verifyPhoneNumber(
+        phoneNumber: cleanPhone,
+        forceResendingToken: forceResendingToken,
+        timeout: const Duration(seconds: 60),
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          debugPrint('[FirebaseService] Phone verification completed automatically.');
+          try {
+            await _auth.signInWithCredential(credential);
+            if (onAutoVerified != null) onAutoVerified(credential);
+            if (!completer.isCompleted) {
+              completer.complete({'success': true, 'autoVerified': true});
+            }
+          } catch (e) {
+            debugPrint('[FirebaseService] Auto sign-in error: $e');
+          }
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          debugPrint('[FirebaseService] Phone verification failed: ${e.code} - ${e.message}');
+          final errMsg = e.message ?? 'Phone verification failed (${e.code})';
+          if (onError != null) onError(errMsg);
+          if (!completer.isCompleted) {
+            completer.complete({'success': false, 'error': errMsg});
+          }
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          debugPrint('[FirebaseService] OTP code sent. Verification ID: $verificationId');
+          if (onCodeSent != null) onCodeSent(verificationId, resendToken);
+          if (!completer.isCompleted) {
+            completer.complete({
+              'success': true,
+              'verificationId': verificationId,
+              'resendToken': resendToken,
+            });
+          }
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          debugPrint('[FirebaseService] Code auto-retrieval timed out for: $verificationId');
+        },
       );
-      return {'success': true, 'user': userCredential.user};
-    } on FirebaseAuthException catch (e) {
-      return {'success': false, 'error': e.message ?? 'Authentication failed'};
     } catch (e) {
+      debugPrint('[FirebaseService] verifyPhoneNumber threw exception: $e');
       return {'success': false, 'error': e.toString()};
+    }
+
+    return completer.future;
+  }
+
+  /// Verifies the 6-digit SMS OTP code entered by the technician
+  Future<Map<String, dynamic>> verifyOtp({
+    required String verificationId,
+    required String smsCode,
+  }) async {
+    try {
+      UserCredential userCredential;
+      if (kIsWeb && _webConfirmationResult != null) {
+        userCredential = await _webConfirmationResult!.confirm(smsCode.trim());
+      } else {
+        final credential = PhoneAuthProvider.credential(
+          verificationId: verificationId,
+          smsCode: smsCode.trim(),
+        );
+        userCredential = await _auth.signInWithCredential(credential);
+      }
+
+      return {
+        'success': true,
+        'user': userCredential.user,
+      };
+    } on FirebaseAuthException catch (e) {
+      debugPrint('[FirebaseService] verifyOtp FirebaseAuthException: ${e.code} - ${e.message}');
+      return {
+        'success': false,
+        'error': e.message ?? 'Invalid verification code',
+      };
+    } catch (e) {
+      debugPrint('[FirebaseService] verifyOtp unexpected error: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
     }
   }
 
   Future<void> signOut() async {
+    _webConfirmationResult = null;
     await _auth.signOut();
   }
 
-  // --- TECHNICIANS API ---
+  // --- TECHNICIANS FIRESTORE API ---
+
+  /// Finds technician matching the verified phone number (with digit normalization)
+  Future<Technician?> fetchTechnicianByPhone(String phone) async {
+    try {
+      final snapshot = await _firestore.collection('technicians').get();
+      final normalizedInput = phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        final tech = Technician.fromJson(data);
+        final normalizedTechPhone = tech.phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+
+        if (normalizedTechPhone == normalizedInput ||
+            (normalizedInput.length >= 10 &&
+                normalizedTechPhone.endsWith(
+                    normalizedInput.substring(normalizedInput.length - 10)))) {
+          return tech;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[FirebaseService] fetchTechnicianByPhone error: $e');
+      return null;
+    }
+  }
 
   Future<List<Technician>> fetchTechnicians() async {
     try {
@@ -65,7 +197,7 @@ class FirebaseService {
     }
   }
 
-  // --- JOBS API ---
+  // --- JOBS FIRESTORE API ---
 
   Future<List<Job>> fetchJobs({String? technicianId}) async {
     try {

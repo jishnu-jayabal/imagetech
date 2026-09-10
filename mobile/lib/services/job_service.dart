@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/job_model.dart';
 import '../models/technician_model.dart';
 import 'firebase_service.dart';
@@ -10,12 +11,16 @@ class JobService extends ChangeNotifier {
   List<Job> _jobs = [];
   List<Technician> _availableTechnicians = [];
   Technician? _currentTechnician;
+  StreamSubscription<List<Job>>? _jobsSubscription;
+  StreamSubscription<User?>? _authSubscription;
   Timer? _gpsBroadcastTimer;
-  Timer? _pollingTimer;
   int _currentRouteIndex = 0;
   bool _isGpsBroadcasting = false;
+  bool _isInitialLoading = true;
   bool _isLoading = false;
   String? _authError;
+  String? _currentVerificationId;
+  int? _resendToken;
 
   // Real Kochi Route Waypoints (M.G. Road -> Palarivattom)
   final List<Map<String, double>> _routeWaypoints = [
@@ -32,9 +37,18 @@ class JobService extends ChangeNotifier {
   List<Technician> get availableTechnicians => _availableTechnicians;
   Technician? get currentTechnician => _currentTechnician;
   bool get isGpsBroadcasting => _isGpsBroadcasting;
+  bool get isInitialLoading => _isInitialLoading;
   bool get isLoading => _isLoading;
   String? get authError => _authError;
+  String? get currentVerificationId => _currentVerificationId;
   bool get isLoggedIn => _currentTechnician != null;
+
+  void resetOtp() {
+    _currentVerificationId = null;
+    _authError = null;
+    _isLoading = false;
+    notifyListeners();
+  }
 
   JobService() {
     _initService();
@@ -43,42 +57,42 @@ class JobService extends ChangeNotifier {
   @override
   void dispose() {
     _gpsBroadcastTimer?.cancel();
-    _pollingTimer?.cancel();
+    _jobsSubscription?.cancel();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _initService() async {
+    _isLoading = true;
+    notifyListeners();
+
+    // Fetch roster from Firestore for verification and quick-select
     await fetchAvailableTechnicians();
-    // Default fallback technician for immediate development readiness
-    if (_currentTechnician == null && _availableTechnicians.isNotEmpty) {
-      _currentTechnician = _availableTechnicians.first;
-      await syncJobsFromFirestore();
-    } else if (_currentTechnician == null) {
-      _currentTechnician = Technician(
-        id: 'tech_rahul',
-        name: 'Rahul Kumar',
-        phone: '+91 98471 23456',
-        email: 'rahul.k@imagemobiles.in',
-        photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-        vehicleNumber: 'KL-07-CD-4912',
-        vehicleType: 'Honda Activa 6G',
-        skills: ['Apple Screen Specialist', 'OnePlus Certified'],
-        rating: 4.92,
-        completedJobsCount: 348,
-        batteryLevel: 89,
-        latitude: 9.9723,
-        longitude: 76.2783,
-      );
-      await syncJobsFromFirestore();
+
+    // Listen to Firebase Auth state changes
+    _authSubscription = _firebaseService.authStateChanges.listen((user) async {
+      if (user != null && user.phoneNumber != null) {
+        debugPrint('[JobService] Authenticated user detected: ${user.phoneNumber}');
+        await _resolveTechnicianProfile(user.phoneNumber!);
+      } else if (user == null && _currentTechnician != null) {
+        _currentTechnician = null;
+        _jobsSubscription?.cancel();
+        _jobs = [];
+        notifyListeners();
+      }
+      _isLoading = false;
+      notifyListeners();
+    });
+
+    // Check if user is already signed in at startup
+    if (_firebaseService.currentUser != null &&
+        _firebaseService.currentUser!.phoneNumber != null) {
+      await _resolveTechnicianProfile(_firebaseService.currentUser!.phoneNumber!);
     }
 
-    // Start periodic background Firestore sync (every 4 seconds)
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (_currentTechnician != null) {
-        syncJobsFromFirestore(silent: true);
-      }
-    });
+    _isInitialLoading = false;
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> fetchAvailableTechnicians() async {
@@ -93,63 +107,157 @@ class JobService extends ChangeNotifier {
     }
   }
 
-  Future<bool> signInWithEmailPassword(String email, String password) async {
+  Future<void> _resolveTechnicianProfile(String phoneNumber) async {
+    _isLoading = true;
+    notifyListeners();
+
+    // 1. Try finding in Firestore by phone
+    Technician? matchedTech = await _firebaseService.fetchTechnicianByPhone(phoneNumber);
+
+    // 2. If not found in live query, check in cached available technicians
+    if (matchedTech == null && _availableTechnicians.isNotEmpty) {
+      final normalizedInput = phoneNumber.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+      try {
+        matchedTech = _availableTechnicians.firstWhere((t) {
+          final normalizedTech = t.phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+          return normalizedTech == normalizedInput ||
+              (normalizedInput.length >= 10 &&
+                  normalizedTech.endsWith(normalizedInput.substring(normalizedInput.length - 10)));
+        });
+      } catch (_) {
+        matchedTech = null;
+      }
+    }
+
+    // 3. Reject if not registered as an authorized technician
+    if (matchedTech == null) {
+      debugPrint('[JobService] Access denied: $phoneNumber is not registered in technicians list.');
+      await _firebaseService.signOut();
+      _currentTechnician = null;
+      _authError = 'Access Denied: Mobile number $phoneNumber is not registered as an authorized Image Mobiles technician. Please contact your Branch Manager.';
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    _currentTechnician = matchedTech;
+    _subscribeToJobsStream(matchedTech.id);
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  // --- FIREBASE PHONE AUTHENTICATION METHODS ---
+
+  /// Request SMS OTP code for mobile number with roster check
+  Future<bool> sendOtp(String phoneNumber) async {
     _isLoading = true;
     _authError = null;
     notifyListeners();
 
-    final result = await _firebaseService.signInWithEmailPassword(email, password);
-    _isLoading = false;
+    // Strict validation: Mobile number must be in the Firestore technicians roster
+    final tech = await _firebaseService.fetchTechnicianByPhone(phoneNumber);
+    if (tech == null) {
+      debugPrint('[JobService] sendOtp blocked: $phoneNumber is not in technicians roster.');
+      _authError = 'Access Denied: Mobile number $phoneNumber is not registered as a technician in the company roster. Please contact your Branch Manager.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    final result = await _firebaseService.sendOtp(
+      phoneNumber: phoneNumber,
+      forceResendingToken: _resendToken,
+      onCodeSent: (verificationId, resendToken) {
+        _currentVerificationId = verificationId;
+        _resendToken = resendToken;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onAutoVerified: (credential) async {
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (error) {
+        _authError = error;
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
 
     if (result['success'] == true) {
-      // Find matching technician by email in available technicians
-      await fetchAvailableTechnicians();
-      final matching = _availableTechnicians.firstWhere(
-        (t) => t.email.toLowerCase() == email.trim().toLowerCase(),
-        orElse: () => _availableTechnicians.isNotEmpty
-            ? _availableTechnicians.first
-            : Technician(
-                id: 'tech_${DateTime.now().millisecondsSinceEpoch}',
-                name: email.split('@').first.toUpperCase(),
-                phone: '+91 98470 12345',
-                email: email,
-                photoUrl: '',
-                vehicleNumber: 'KL-07-CD-0001',
-                vehicleType: 'Field Service Bike',
-                skills: ['Doorstep Technician'],
-                rating: 5.0,
-                completedJobsCount: 0,
-                batteryLevel: 95,
-                latitude: 9.9816,
-                longitude: 76.2999,
-              ),
-      );
-
-      _currentTechnician = matching;
-      await syncJobsFromFirestore();
+      if (result['verificationId'] != null) {
+        _currentVerificationId = result['verificationId'];
+      }
+      if (result['resendToken'] != null) {
+        _resendToken = result['resendToken'];
+      }
+      _isLoading = false;
       notifyListeners();
       return true;
     } else {
-      _authError = result['error'] as String? ?? 'Login failed';
+      _authError = result['error'] as String? ?? 'Failed to send verification code';
+      _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  void selectTechnician(Technician tech) {
+  /// Verify 6-digit SMS OTP code
+  Future<bool> verifyOtp(String smsCode, String phoneNumber) async {
+    if (_currentVerificationId == null && !kIsWeb) {
+      _authError = 'Verification session expired. Please request a new code.';
+      notifyListeners();
+      return false;
+    }
+
+    _isLoading = true;
+    _authError = null;
+    notifyListeners();
+
+    final result = await _firebaseService.verifyOtp(
+      verificationId: _currentVerificationId ?? '',
+      smsCode: smsCode,
+    );
+
+    if (result['success'] == true) {
+      await _resolveTechnicianProfile(phoneNumber);
+      if (_currentTechnician == null) {
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } else {
+      _authError = result['error'] as String? ?? 'Invalid verification code';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Select a technician from the roster directly (for development & testing)
+  Future<void> selectTechnician(Technician tech) async {
     _currentTechnician = tech;
-    syncJobsFromFirestore();
+    _subscribeToJobsStream(tech.id);
     notifyListeners();
   }
 
-  void signOut() {
-    _firebaseService.signOut();
-    _currentTechnician = null;
-    _jobs = [];
+  /// Log out technician and clear session
+  Future<void> signOut() async {
+    _jobsSubscription?.cancel();
     _gpsBroadcastTimer?.cancel();
     _isGpsBroadcasting = false;
+    _currentTechnician = null;
+    _jobs = [];
+    _currentVerificationId = null;
+    _resendToken = null;
+    await _firebaseService.signOut();
     notifyListeners();
   }
+
+  // --- REAL-TIME FIRESTORE JOBS STREAM ---
 
   Future<void> syncJobsFromFirestore({bool silent = false}) async {
     if (_currentTechnician == null) return;
@@ -157,53 +265,25 @@ class JobService extends ChangeNotifier {
       final remoteJobs = await _firebaseService.fetchJobs(
         technicianId: _currentTechnician!.id,
       );
-
-      if (remoteJobs.isNotEmpty) {
-        _jobs = remoteJobs;
-      } else if (_jobs.isEmpty) {
-        // Provide initial ready job so technician has an active dispatch to interact with
-        _loadFallbackJob();
-      }
-
+      _jobs = remoteJobs;
       if (!silent) notifyListeners();
     } catch (e) {
       debugPrint('[JobService] syncJobsFromFirestore error: $e');
-      if (_jobs.isEmpty) {
-        _loadFallbackJob();
-      }
     }
   }
 
-  void _loadFallbackJob() {
-    _jobs = [
-      Job(
-        id: 'job_7204',
-        jobNumber: 'IMG-7204',
-        trackingToken: 'IMG-7204-KL',
-        branchId: 'branch_mg_road',
-        technicianId: _currentTechnician?.id ?? 'tech_rahul',
-        customer: CustomerInfo(
-          name: 'Dr. Priya Nair',
-          phone: '+91 94470 98123',
-          address: 'Flat 4B, Skyline Oasis, Palarivattom, Kochi',
-          latitude: 10.0055,
-          longitude: 76.3075,
-        ),
-        device: DeviceInfo(
-          brand: 'OnePlus',
-          model: 'OnePlus 11 5G',
-          color: 'Emerald Green',
-        ),
-        issueDescription: 'Green vertical lines on AMOLED screen, fast battery drainage',
-        serviceType: 'Doorstep Inspection & Screen Repair',
-        status: JobStatus.assigned,
-        baseEstimate: 1200.0,
-        additionalCharges: [],
-        proofPhotos: [],
-        scheduledAt: DateTime.now().add(const Duration(minutes: 30)),
-      ),
-    ];
-    notifyListeners();
+  void _subscribeToJobsStream(String technicianId) {
+    _jobsSubscription?.cancel();
+    _jobsSubscription = _firebaseService.streamJobs(technicianId: technicianId).listen(
+      (remoteJobs) {
+        _jobs = remoteJobs;
+        debugPrint('[JobService] Realtime Firestore sync: received ${_jobs.length} jobs for $technicianId');
+        notifyListeners();
+      },
+      onError: (error) {
+        debugPrint('[JobService] Realtime Firestore stream error: $error');
+      },
+    );
   }
 
   Job? getJobById(String id) {
@@ -214,7 +294,7 @@ class JobService extends ChangeNotifier {
     }
   }
 
-  // --- JOB LIFECYCLE STAGES (From PDF Section 3.5 & 5) ---
+  // --- FIELD JOB LIFECYCLE STAGES (Written Directly to Firestore) ---
 
   // Stage 1: Technician taps "Start Trip" (Assigned -> In Progress)
   Future<void> startTrip(String jobId) async {
@@ -226,16 +306,16 @@ class JobService extends ChangeNotifier {
     _currentRouteIndex = 0;
     notifyListeners();
 
-    // Sync to Firestore
+    // Sync status to Firestore
     await _firebaseService.updateJobStatus(jobId, JobStatus.inProgress.statusString);
 
-    // Start 10-15s live GPS broadcast (PDF Section 4)
+    // Start live GPS telemetry broadcast to Firestore
     _gpsBroadcastTimer?.cancel();
     _gpsBroadcastTimer = Timer.periodic(const Duration(seconds: 12), (timer) async {
       if (_currentRouteIndex < _routeWaypoints.length - 1) {
         _currentRouteIndex++;
         final wp = _routeWaypoints[_currentRouteIndex];
-        debugPrint('[GPS Stream] Ping: lat: ${wp['lat']}, lng: ${wp['lng']}');
+        debugPrint('[GPS Stream] Ping lat: ${wp['lat']}, lng: ${wp['lng']}');
 
         if (_currentTechnician != null) {
           _currentTechnician!.latitude = wp['lat']!;
@@ -298,7 +378,6 @@ class JobService extends ChangeNotifier {
     final job = getJobById(jobId);
     if (job == null) return false;
 
-    // Per company requirement (PDF Section 4): Proof photos required to close
     if (job.proofPhotos.isEmpty) {
       return false;
     }
@@ -312,7 +391,7 @@ class JobService extends ChangeNotifier {
     return true;
   }
 
-  // Additional Charges with 18% GST (PDF Section 3.3)
+  // Additional Charges with 18% GST (Written to Firestore)
   Future<void> addAdditionalCharge(String jobId, String title, double amount) async {
     final job = getJobById(jobId);
     if (job == null) return;
@@ -335,7 +414,7 @@ class JobService extends ChangeNotifier {
     );
   }
 
-  // Add Proof Photo for closure
+  // Add Proof Photo for closure (Written to Firestore)
   Future<void> addProofPhoto(String jobId, String photoUrl) async {
     final job = getJobById(jobId);
     if (job == null) return;
@@ -346,7 +425,7 @@ class JobService extends ChangeNotifier {
     await _firebaseService.addJobProofPhoto(jobId, job.proofPhotos);
   }
 
-  // Technician-Created Job (PDF Section 3.3: sits in "Pending Estimate")
+  // Technician-Created Job (Written to Firestore collection 'jobs')
   Future<bool> createOnsiteIntakeJob({
     required String customerName,
     required String customerPhone,
@@ -389,10 +468,6 @@ class JobService extends ChangeNotifier {
       'createdAt': DateTime.now().toIso8601String(),
     };
 
-    final success = await _firebaseService.createJob(jobData);
-    if (success) {
-      await syncJobsFromFirestore();
-    }
-    return success;
+    return await _firebaseService.createJob(jobData);
   }
 }

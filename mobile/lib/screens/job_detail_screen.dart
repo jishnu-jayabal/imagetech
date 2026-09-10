@@ -79,21 +79,21 @@ class JobDetailScreen extends StatelessWidget {
                     ),
                     Text(
                       'Color: ${job.device.color} • ${job.serviceType}',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
                     ),
-                    const Divider(height: 24),
+                    const Divider(height: 24, color: Color(0xFF2A374F)),
                     Row(
                       children: [
-                        const Icon(Icons.person_outline, size: 20, color: Colors.blue),
+                        const Icon(Icons.person_outline, size: 20, color: Color(0xFF38BDF8)),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             job.customer.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 14.5),
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.phone, color: Colors.green),
+                          icon: const Icon(Icons.phone, color: Color(0xFF10B981)),
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('Calling ${job.customer.phone}...')),
@@ -105,32 +105,53 @@ class JobDetailScreen extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 20, color: Colors.red),
+                        const Icon(Icons.location_on_outlined, size: 20, color: Color(0xFFF87171)),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             job.customer.address,
-                            style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                            style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 13),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.all(10),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF2A374F)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Reported Issue:',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                          const Row(
+                            children: [
+                              Icon(Icons.report_problem_outlined, size: 14, color: Color(0xFFFBBF24)),
+                              SizedBox(width: 6),
+                              Text(
+                                'REPORTED ISSUE',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFFBBF24),
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(job.issueDescription, style: const TextStyle(fontSize: 13)),
+                          const SizedBox(height: 6),
+                          Text(
+                            job.issueDescription,
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              color: Color(0xFFF1F5F9),
+                              height: 1.45,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -292,28 +313,28 @@ class JobDetailScreen extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFFEF3C7),
+          color: const Color(0xFF1E293B),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFFCD34D)),
+          border: Border.all(color: const Color(0xFFF59E0B)),
         ),
         child: const Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.hourglass_top_rounded, color: Color(0xFFD97706), size: 20),
+                Icon(Icons.hourglass_top_rounded, color: Color(0xFFFBBF24), size: 20),
                 SizedBox(width: 8),
                 Text(
                   'Pending Estimate Approval',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFFBBF24)),
                 ),
               ],
             ),
             SizedBox(height: 6),
             Text(
-              'This job is sitting in "Pending Estimate" until your Branch Manager reviews and approves the cost in the Admin Portal (PDF Sec 3.3).',
+              'Awaiting Branch Manager review and diagnostic quote approval in the Admin Portal before field dispatch can proceed.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+              style: TextStyle(fontSize: 12.5, color: Color(0xFFCBD5E1), height: 1.4),
             ),
           ],
         ),
@@ -347,7 +368,7 @@ class JobDetailScreen extends StatelessWidget {
               Expanded(
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.store_mall_directory_rounded),
-                  label: const Text('Take to Shop (Leg 1)'),
+                  label: const Text('Transfer to Lab'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF7C3AED),
                     side: const BorderSide(color: Color(0xFF7C3AED)),
@@ -357,7 +378,7 @@ class JobDetailScreen extends StatelessWidget {
                   onPressed: () {
                     jobService.rescheduleToShop(job.id);
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Status updated to "Reschedule -> Shop" (Leg 1 Pickup Tracking)')),
+                      const SnackBar(content: Text('Status updated: Device in transit to Lab Repair.')),
                     );
                   },
                 ),
@@ -378,8 +399,9 @@ class JobDetailScreen extends StatelessWidget {
                     if (job.proofPhotos.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('At least 1 completion proof photo is mandatory before closing (PDF Sec 4). Tap "+ Add" above.'),
-                          backgroundColor: Colors.red,
+                          content: Text('Please add at least 1 inspection/proof photo before completing the service. Tap "+ Add" above.'),
+                          backgroundColor: Color(0xFFDC2626),
+                          behavior: SnackBarBehavior.floating,
                         ),
                       );
                       return;
@@ -404,7 +426,7 @@ class JobDetailScreen extends StatelessWidget {
         height: 50,
         child: ElevatedButton.icon(
           icon: const Icon(Icons.inventory_2_rounded),
-          label: const Text('Device Arrived at Shop Bench', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          label: const Text('Device Checked in at Lab Bench', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF9333EA),
             foregroundColor: Colors.white,
@@ -425,7 +447,7 @@ class JobDetailScreen extends StatelessWidget {
         height: 50,
         child: ElevatedButton.icon(
           icon: const Icon(Icons.delivery_dining_rounded),
-          label: const Text('Bench Repair Done ➔ Out for Delivery (Leg 2)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          label: const Text('Repair Completed ➔ Out for Delivery', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF0891B2),
             foregroundColor: Colors.white,
@@ -435,7 +457,7 @@ class JobDetailScreen extends StatelessWidget {
           onPressed: () {
             jobService.outForDelivery(job.id);
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Out for Delivery started! New tracking link sent to customer (Leg 2).')),
+              const SnackBar(content: Text('Out for delivery initiated. Live delivery tracking link dispatched to customer.')),
             );
           },
         ),
@@ -446,7 +468,7 @@ class JobDetailScreen extends StatelessWidget {
         height: 50,
         child: ElevatedButton.icon(
           icon: const Icon(Icons.handshake_rounded),
-          label: const Text('Delivered & Confirmed ➔ Close Job', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          label: const Text('Delivered & Handover Confirmed', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF10B981),
             foregroundColor: Colors.white,
@@ -458,7 +480,8 @@ class JobDetailScreen extends StatelessWidget {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Please attach at least 1 customer handover/proof photo before closing.'),
-                  backgroundColor: Colors.red,
+                  backgroundColor: Color(0xFFDC2626),
+                  behavior: SnackBarBehavior.floating,
                 ),
               );
               return;

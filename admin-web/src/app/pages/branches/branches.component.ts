@@ -91,9 +91,10 @@ import { Branch } from '../../models/admin.models';
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-outline" (click)="closeModal()">Cancel</button>
-            <button class="btn btn-primary" (click)="saveBranch()">
-              {{ isEditing ? 'Save Changes' : 'Create Branch & Sync' }}
+            <button class="btn btn-outline" (click)="closeModal()" [disabled]="isSaving">Cancel</button>
+            <button class="btn btn-primary" (click)="saveBranch()" [disabled]="isSaving">
+              <span *ngIf="isSaving" class="spinner-border spinner-border-sm" style="display: inline-block; width: 13px; height: 13px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle;"></span>
+              {{ isSaving ? 'Saving...' : (isEditing ? 'Save Changes' : 'Create Branch & Sync') }}
             </button>
           </div>
         </div>
@@ -201,29 +202,39 @@ export class BranchesPageComponent implements OnInit {
     this.showModal = true;
   }
 
+  isSaving = false;
+
   closeModal(): void {
+    if (this.isSaving) return;
     this.showModal = false;
   }
 
   async saveBranch(): Promise<void> {
+    if (this.isSaving) return;
     if (!this.currentBranch.name || !this.currentBranch.code) {
       alert('Branch Name and Code are required');
       return;
     }
 
-    if (this.isEditing && this.currentBranchId) {
-      await this.adminService.updateBranch(this.currentBranchId, this.currentBranch);
-    } else {
-      await this.adminService.createBranch({
-        name: this.currentBranch.name,
-        code: this.currentBranch.code,
-        phone: this.currentBranch.phone,
-        address: this.currentBranch.address || 'Kochi, Kerala',
-        activeTechniciansCount: 0
-      });
+    try {
+      this.isSaving = true;
+      if (this.isEditing && this.currentBranchId) {
+        await this.adminService.updateBranch(this.currentBranchId, this.currentBranch);
+      } else {
+        await this.adminService.createBranch({
+          name: this.currentBranch.name,
+          code: this.currentBranch.code,
+          phone: this.currentBranch.phone,
+          address: this.currentBranch.address || 'Kochi, Kerala',
+          activeTechniciansCount: 0
+        });
+      }
+      this.showModal = false;
+    } catch (err: any) {
+      alert('Failed to save branch: ' + (err.message || err));
+    } finally {
+      this.isSaving = false;
     }
-
-    this.showModal = false;
   }
 
   async deleteBranch(branch: Branch): Promise<void> {

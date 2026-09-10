@@ -276,9 +276,10 @@ export class AdminService {
     const newTech: any = {
       name: tech.name || '',
       phone: tech.phone || '',
+      email: tech.email ? tech.email.trim() : '',
       branchId: tech.branchId || '',
       vehicleNumber: tech.vehicleNumber || '',
-      vehicleType: tech.vehicleType || 'Motorcycle',
+      vehicleType: tech.vehicleType || '',
       rating: 5.0,
       completedJobsCount: 0,
       status: 'available',

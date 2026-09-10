@@ -52,6 +52,7 @@ export interface Technician {
   branchId: string;
   name: string;
   phone: string;
+  email?: string;
   vehicleNumber: string;
   vehicleType: string;
   rating: number;

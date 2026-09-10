@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { AdminService } from '../../services/admin.service';
-import { Job, JobStatus, AdditionalCharge } from '../../models/admin.models';
+import { Job, JobStatus, AdditionalCharge, Technician } from '../../models/admin.models';
 
 @Component({
   selector: 'app-jobs-page',
@@ -187,8 +187,11 @@ import { Job, JobStatus, AdditionalCharge } from '../../models/admin.models';
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-outline" (click)="showCreateModal = false">Cancel</button>
-            <button class="btn btn-primary" (click)="submitCreateJob()">Save Dispatch & Sync to Firestore</button>
+            <button class="btn btn-outline" (click)="showCreateModal = false" [disabled]="isSubmitting">Cancel</button>
+            <button class="btn btn-primary" (click)="submitCreateJob()" [disabled]="isSubmitting">
+              <span *ngIf="isSubmitting" class="spinner-border spinner-border-sm" style="display: inline-block; width: 13px; height: 13px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle;"></span>
+              {{ isSubmitting ? 'Saving Dispatch...' : 'Save Dispatch & Sync to Firestore' }}
+            </button>
           </div>
         </div>
       </div>
@@ -214,8 +217,11 @@ import { Job, JobStatus, AdditionalCharge } from '../../models/admin.models';
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-outline" (click)="selectedJobForEstimate = null">Cancel</button>
-            <button class="btn btn-primary" (click)="saveEstimate()">Approve & Update Firestore</button>
+            <button class="btn btn-outline" (click)="selectedJobForEstimate = null" [disabled]="isApproving">Cancel</button>
+            <button class="btn btn-primary" (click)="saveEstimate()" [disabled]="isApproving">
+              <span *ngIf="isApproving" class="spinner-border spinner-border-sm" style="display: inline-block; width: 13px; height: 13px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle;"></span>
+              {{ isApproving ? 'Approving...' : 'Approve & Update Firestore' }}
+            </button>
           </div>
         </div>
       </div>
@@ -236,15 +242,18 @@ import { Job, JobStatus, AdditionalCharge } from '../../models/admin.models';
             </select>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-outline" (click)="selectedJobForReassign = null">Cancel</button>
-            <button class="btn btn-primary" (click)="saveReassign()">Confirm Reassignment</button>
+            <button class="btn btn-outline" (click)="selectedJobForReassign = null" [disabled]="isReassigning">Cancel</button>
+            <button class="btn btn-primary" (click)="saveReassign()" [disabled]="isReassigning">
+              <span *ngIf="isReassigning" class="spinner-border spinner-border-sm" style="display: inline-block; width: 13px; height: 13px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; vertical-align: middle;"></span>
+              {{ isReassigning ? 'Reassigning...' : 'Confirm Reassignment' }}
+            </button>
           </div>
         </div>
       </div>
 
       <!-- DRAWER / MODAL: JOB DETAILS, CHARGES & AUDIT -->
       <div class="modal-overlay" *ngIf="detailJob">
-        <div class="modal-box" style="max-width: 650px;">
+        <div class="modal-box" style="max-width: 660px;">
           <div class="modal-header">
             <div>
               <h4>Job Details: {{ detailJob.jobNumber }}</h4>
@@ -252,7 +261,79 @@ import { Job, JobStatus, AdditionalCharge } from '../../models/admin.models';
             </div>
             <button class="btn btn-sm btn-outline" (click)="detailJob = null">✕</button>
           </div>
-          <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow-y: auto;">
+          <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; max-height: 75vh; overflow-y: auto;">
+            
+            <!-- 1. CURRENT STAGE & LIFECYCLE TRACKER -->
+            <div class="stage-tracker-box">
+              <div class="stage-tracker-header">
+                <span class="stage-tag">CURRENT STAGE: {{ formatStatus(detailJob.status) | uppercase }}</span>
+                <span class="stage-step-num">Stage {{ getStageIndex(detailJob.status) }} of 6</span>
+              </div>
+              <p class="stage-desc">{{ getStageDescription(detailJob.status) }}</p>
+
+              <!-- Stepper Timeline -->
+              <div class="stepper-track">
+                <div 
+                  *ngFor="let stage of getStages(); let last = last" 
+                  class="stepper-node" 
+                  [class.active]="stage.key === detailJob.status || (stage.key === 'in_shop' && detailJob.status === 'rescheduled_shop')"
+                  [class.passed]="getStageIndex(detailJob.status) > stage.index"
+                >
+                  <div class="node-circle">
+                    <span *ngIf="getStageIndex(detailJob.status) > stage.index">✓</span>
+                    <span *ngIf="getStageIndex(detailJob.status) <= stage.index">{{ stage.icon }}</span>
+                  </div>
+                  <span class="node-label">{{ stage.label }}</span>
+                  <div *ngIf="!last" class="node-connector" [class.passed]="getStageIndex(detailJob.status) > stage.index"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. ASSIGNED TECHNICIAN DETAILS -->
+            <div class="tech-detail-card" *ngIf="getTech(detailJob.technicianId) as tech">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="display: flex; gap: 12px; align-items: center;">
+                  <div class="tech-avatar">
+                    {{ tech.name.slice(0, 2).toUpperCase() }}
+                    <span class="duty-badge" [class.available]="tech.status === 'available'" [class.on-duty]="tech.status === 'on_duty'" [class.offline]="tech.status === 'offline'"></span>
+                  </div>
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <h4 style="margin: 0; color: #fff; font-size: 14px;">{{ tech.name }}</h4>
+                      <span class="rating-pill">★ {{ tech.rating || 5.0 }}</span>
+                      <span style="font-size: 11px; text-transform: uppercase; color: #10b981; font-weight: bold;" *ngIf="tech.status === 'available'">● Available</span>
+                      <span style="font-size: 11px; text-transform: uppercase; color: #fbbf24; font-weight: bold;" *ngIf="tech.status === 'on_duty'">● On Duty</span>
+                      <span style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold;" *ngIf="tech.status === 'offline'">● Offline</span>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-top: 4px; font-size: 11.5px; color: #94a3b8; flex-wrap: wrap;">
+                      <a [href]="'tel:' + tech.phone" style="color: #38bdf8; text-decoration: none; font-weight: 600;">📞 {{ tech.phone }}</a>
+                      <span *ngIf="tech.email">✉️ {{ tech.email }}</span>
+                    </div>
+                    <div style="font-size: 11px; color: #cbd5e1; margin-top: 3px;">
+                      🛵 {{ tech.vehicleType }} <strong style="color: #38bdf8;">({{ tech.vehicleNumber }})</strong> • {{ tech.completedJobsCount || 0 }} Jobs Done
+                    </div>
+                  </div>
+                </div>
+                <button class="btn btn-sm btn-outline" style="font-size: 11px; padding: 4px 10px;" (click)="openReassignModal(detailJob)">
+                  🔁 Reassign
+                </button>
+              </div>
+            </div>
+
+            <!-- If NO Technician is Assigned -->
+            <div class="unassigned-alert" *ngIf="!getTech(detailJob.technicianId)">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">⚠️</span>
+                <div>
+                  <div style="color: #f59e0b; font-weight: 700; font-size: 13px;">No Technician Assigned</div>
+                  <div style="color: #94a3b8; font-size: 11px;">This service ticket is waiting unassigned in the dispatch queue.</div>
+                </div>
+              </div>
+              <button class="btn btn-sm btn-primary" (click)="openReassignModal(detailJob)">
+                + Assign Technician
+              </button>
+            </div>
+
             <!-- Customer info -->
             <div style="background: #0f172a; padding: 12px; border-radius: 8px;">
               <div style="display: flex; justify-content: space-between;">
@@ -379,6 +460,162 @@ import { Job, JobStatus, AdditionalCharge } from '../../models/admin.models';
     .modal-header { padding: 16px 20px; border-bottom: 1px solid #2a374f; display: flex; justify-content: space-between; align-items: center; }
     .modal-body { padding: 20px; }
     .modal-footer { padding: 14px 20px; border-top: 1px solid #2a374f; display: flex; justify-content: flex-end; gap: 8px; }
+
+    /* Current Stage Tracker */
+    .stage-tracker-box {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.95));
+      border: 1px solid #2a374f;
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .stage-tracker-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stage-tag {
+      font-size: 11px;
+      font-weight: 800;
+      color: #38bdf8;
+      letter-spacing: 0.5px;
+    }
+    .stage-step-num {
+      font-size: 11px;
+      color: #94a3b8;
+      background: #1e293b;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid #334155;
+    }
+    .stage-desc {
+      font-size: 12px;
+      color: #cbd5e1;
+      margin: 0;
+      line-height: 1.4;
+    }
+    .stepper-track {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+    .stepper-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      flex: 1;
+      z-index: 1;
+    }
+    .node-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #1e293b;
+      border: 2px solid #334155;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #94a3b8;
+      transition: all 0.2s;
+    }
+    .stepper-node.active .node-circle {
+      background: #2563eb;
+      border-color: #38bdf8;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+      transform: scale(1.15);
+    }
+    .stepper-node.passed .node-circle {
+      background: #065f46;
+      border-color: #10b981;
+      color: #34d399;
+      font-weight: bold;
+    }
+    .node-label {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 5px;
+      font-weight: 600;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .stepper-node.active .node-label {
+      color: #38bdf8;
+      font-weight: 700;
+    }
+    .stepper-node.passed .node-label {
+      color: #94a3b8;
+    }
+    .node-connector {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      width: 100%;
+      height: 2px;
+      background: #2a374f;
+      z-index: -1;
+    }
+    .node-connector.passed {
+      background: #10b981;
+    }
+
+    /* Technician Details in Job Modal */
+    .tech-detail-card {
+      background: #0f172a;
+      border: 1px solid #2563eb;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .tech-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .duty-badge {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      border: 2px solid #0f172a;
+    }
+    .duty-badge.available { background: #10b981; }
+    .duty-badge.on-duty { background: #fbbf24; }
+    .duty-badge.offline { background: #64748b; }
+    .rating-pill {
+      background: rgba(251, 191, 36, 0.15);
+      color: #fbbf24;
+      font-size: 10.5px;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .unassigned-alert {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px dashed #f59e0b;
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
   `]
 })
 export class JobsPageComponent implements OnInit {
@@ -398,12 +635,71 @@ export class JobsPageComponent implements OnInit {
   reassignTechId: string = '';
   showCreateModal = false;
 
+  isSubmitting = false;
+  isApproving = false;
+  isReassigning = false;
+
+  allTechs: Technician[] = [];
+
   ngOnInit(): void {
+    this.technicians$.subscribe(t => this.allTechs = t);
     this.route.queryParams.subscribe(params => {
       if (params['action'] === 'create' || params['create'] === 'true') {
         setTimeout(() => this.openCreateModal(), 150);
       }
     });
+  }
+
+  getTech(techId: string): Technician | undefined {
+    if (!techId) return undefined;
+    return this.allTechs.find(t => t.id === techId);
+  }
+
+  getStages() {
+    return [
+      { key: 'pending_estimate', label: 'Estimate', icon: '📝', index: 1 },
+      { key: 'assigned', label: 'Assigned', icon: '👤', index: 2 },
+      { key: 'in_progress', label: 'In Progress', icon: '⚡', index: 3 },
+      { key: 'in_shop', label: 'In Lab', icon: '🔬', index: 4 },
+      { key: 'out_for_delivery', label: 'Delivery', icon: '🛵', index: 5 },
+      { key: 'completed', label: 'Completed', icon: '✅', index: 6 }
+    ];
+  }
+
+  getStageIndex(status: string): number {
+    switch (status) {
+      case 'pending_estimate': return 1;
+      case 'assigned': return 2;
+      case 'in_progress': return 3;
+      case 'in_shop':
+      case 'rescheduled_shop': return 4;
+      case 'out_for_delivery': return 5;
+      case 'completed': return 6;
+      case 'cancelled': return 0;
+      default: return 1;
+    }
+  }
+
+  getStageDescription(status: string): string {
+    switch (status) {
+      case 'pending_estimate':
+        return 'Stage 1 of 6: Awaiting manager diagnosis and customer estimate approval before dispatch.';
+      case 'assigned':
+        return 'Stage 2 of 6: Assigned to field technician. Doorstep dispatch scheduled.';
+      case 'in_progress':
+        return 'Stage 3 of 6: Technician is currently on-site performing diagnosis and hardware service.';
+      case 'in_shop':
+      case 'rescheduled_shop':
+        return 'Stage 4 of 6: Device transferred to central lab facility for specialized micro-soldering / parts.';
+      case 'out_for_delivery':
+        return 'Stage 5 of 6: Hardware repair verified by QA. En route for return handover.';
+      case 'completed':
+        return 'Stage 6 of 6: Handover signature obtained and payment settled. Service completed.';
+      case 'cancelled':
+        return 'Job Cancelled: Ticket closed prior to service completion.';
+      default:
+        return 'Current status: ' + this.formatStatus(status);
+    }
   }
 
   showAddChargeRow = false;
@@ -479,39 +775,46 @@ export class JobsPageComponent implements OnInit {
   }
 
   async submitCreateJob(): Promise<void> {
+    if (this.isSubmitting) return;
     if (!this.newJob.customerName || !this.newJob.customerPhone) {
       alert('Customer Name and Mobile Number are required.');
       return;
     }
 
-    await this.adminService.createJob({
-      branchId: this.newJob.branchId,
-      technicianId: this.newJob.technicianId,
-      customer: {
-        name: this.newJob.customerName,
-        phone: this.newJob.customerPhone,
-        address: this.newJob.customerAddress || 'Kochi, Kerala',
-        location: { latitude: 9.9830, longitude: 76.2865 }
-      },
-      device: {
-        brand: this.newJob.deviceModel.split(' ')[0] || 'Mobile',
-        model: this.newJob.deviceModel || 'Smartphone',
-        color: this.newJob.deviceColor || 'Black'
-      },
-      serviceType: this.newJob.serviceType,
-      issueDescription: this.newJob.issueDescription || 'Diagnostic requested',
-      status: this.newJob.isApproved ? 'assigned' : 'pending_estimate',
-      pricing: {
-        baseEstimate: this.newJob.baseEstimate,
-        estimateApproved: this.newJob.isApproved,
-        additionalCharges: [],
-        subtotal: this.newJob.baseEstimate,
-        gstRate: 0.18,
-        total: this.newJob.baseEstimate * 1.18
-      }
-    });
-
-    this.showCreateModal = false;
+    try {
+      this.isSubmitting = true;
+      await this.adminService.createJob({
+        branchId: this.newJob.branchId,
+        technicianId: this.newJob.technicianId,
+        customer: {
+          name: this.newJob.customerName,
+          phone: this.newJob.customerPhone,
+          address: this.newJob.customerAddress || 'Kochi, Kerala',
+          location: { latitude: 9.9830, longitude: 76.2865 }
+        },
+        device: {
+          brand: this.newJob.deviceModel.split(' ')[0] || 'Mobile',
+          model: this.newJob.deviceModel || 'Smartphone',
+          color: this.newJob.deviceColor || 'Black'
+        },
+        serviceType: this.newJob.serviceType,
+        issueDescription: this.newJob.issueDescription || 'Diagnostic requested',
+        status: this.newJob.isApproved ? 'assigned' : 'pending_estimate',
+        pricing: {
+          baseEstimate: this.newJob.baseEstimate,
+          estimateApproved: this.newJob.isApproved,
+          additionalCharges: [],
+          subtotal: this.newJob.baseEstimate,
+          gstRate: 0.18,
+          total: this.newJob.baseEstimate * 1.18
+        }
+      });
+      this.showCreateModal = false;
+    } catch (err: any) {
+      alert('Failed to create dispatch: ' + (err.message || err));
+    } finally {
+      this.isSubmitting = false;
+    }
   }
 
   openEstimateModal(job: Job): void {
@@ -520,9 +823,17 @@ export class JobsPageComponent implements OnInit {
   }
 
   async saveEstimate(): Promise<void> {
+    if (this.isApproving) return;
     if (this.selectedJobForEstimate && this.editAmount > 0) {
-      await this.adminService.approveEstimate(this.selectedJobForEstimate.id, this.editAmount);
-      this.selectedJobForEstimate = null;
+      try {
+        this.isApproving = true;
+        await this.adminService.approveEstimate(this.selectedJobForEstimate.id, this.editAmount);
+        this.selectedJobForEstimate = null;
+      } catch (err: any) {
+        alert('Failed to approve estimate: ' + (err.message || err));
+      } finally {
+        this.isApproving = false;
+      }
     }
   }
 
@@ -532,9 +843,20 @@ export class JobsPageComponent implements OnInit {
   }
 
   async saveReassign(): Promise<void> {
+    if (this.isReassigning) return;
     if (this.selectedJobForReassign && this.reassignTechId) {
-      await this.adminService.reassignTechnician(this.selectedJobForReassign.id, this.reassignTechId);
-      this.selectedJobForReassign = null;
+      try {
+        this.isReassigning = true;
+        await this.adminService.reassignTechnician(this.selectedJobForReassign.id, this.reassignTechId);
+        if (this.detailJob && this.detailJob.id === this.selectedJobForReassign.id) {
+          this.detailJob.technicianId = this.reassignTechId;
+        }
+        this.selectedJobForReassign = null;
+      } catch (err: any) {
+        alert('Failed to reassign technician: ' + (err.message || err));
+      } finally {
+        this.isReassigning = false;
+      }
     }
   }
 
